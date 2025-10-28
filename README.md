@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/LEDNet_LOLBlur_logo.png" height=90>
-</p>
-
 ## LEDNet: Joint Low-light Enhancement and Deblurring in the Dark (ECCV 2022) - ONNXRuntime / TensorRT Implementation
 
 Original Paper:
@@ -153,7 +149,7 @@ python inference_lednet.py --model lednet_retrain --test_path '/home/ubuntu/Data
 
 The results will be saved in the `results` folder.
 
-### Model Export to ONNXRuntime
+### 5. Model Export to ONNXRuntime
 
 The export has been tested on the following onnx packages:
 onnx==1.17
@@ -175,7 +171,7 @@ For Inference, run the following:
 python run_onnx_cuda.py --onnx_path './compiled/lednet_retrain.onnx' --test_path '/home/ubuntu/Data/Lowlight/LOL/test/low_blur/0052' --result_path './output/ppm2_onnx_fp32'
 ```
 
-### Model Export to TensorRT
+### 6. Model Export to TensorRT
 
 Install the following packages:
 ```bash
@@ -214,7 +210,7 @@ python run_trt.py --inputs '/home/ubuntu/Data/Lowlight/LOL/test/low_blur/0052' -
 python run_trt.py --inputs '/home/ubuntu/Data/Lowlight/LOL/test/low_blur/0052' --model './compiled/lednet_retrain.onnx' --outputs "./output/trt_fp16_optim3" --use_fp16 
 ```
 
-### Inference Speed comparisons (Nvidia A10 GPU)
+### 7. Inference Speed comparisons (Nvidia A10 GPU)
 
 Currently all benchmarks are based on a small sample test of 60 images from [LOL](https://drive.google.com/drive/folders/11HcsiHNvM7JUlbuHIniREdQ2peDUhtwX) dataset low_blur/0052, average SSIM score was 0.995. 
 
@@ -229,7 +225,7 @@ Currently all benchmarks are based on a small sample test of 60 images from [LOL
 
 SSIM Scores are using Original Model output as Reference. 
 
-### Verification using SSIM between Original Model and our ONNX supported model, TensorRT models
+### 8. Verification using SSIM between Original Model and our ONNX supported model, TensorRT models
 
 ```
 python ssim_verify.py --img1_folder './output/uncompressed_ppm1/0052' --img2_folder './output/uncompressed_ppm2/0052'
@@ -237,9 +233,6 @@ python ssim_verify.py --img1_folder './output/uncompressed_ppm1/0052' --img2_fol
 python ssim_verify.py --img1_folder './output/uncompressed_ppm1/0052' --img2_folder './output/trt_fp16_optim3/'
 python ssim_verify.py --img1_folder './output/uncompressed_ppm1/0052' --img2_folder './output/trt_fp32_optim3/'
 ```
-
-### Evaluation
-
 
 ### License
 
