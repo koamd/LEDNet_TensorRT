@@ -3,6 +3,10 @@
 # ignored files
 version.py
 
+#engine files
+*.engine
+*.onnx
+
 # ignored files with suffix
 *.html
 # *.png
@@ -129,3 +133,5 @@ tb_logger
 run.sh
 inference.sh
 tb.sh
+
+output/*

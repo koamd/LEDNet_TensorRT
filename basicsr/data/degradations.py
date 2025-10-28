@@ -3,7 +3,7 @@ import math
 import numpy as np
 import random
 import torch
-from torchvision.transforms.functional_tensor import rgb_to_grayscale
+from torchvision.transforms import functional as F
 
 
 # -------------------------------------------------------------------- #
@@ -354,7 +354,7 @@ def generate_poisson_noise_pt(img, scale=1.0, gray_noise=0):
         gray_noise = gray_noise.view(b, 1, 1, 1)
         cal_gray_noise = torch.sum(gray_noise) > 0
     if cal_gray_noise:
-        img_gray = rgb_to_grayscale(img, num_output_channels=1)
+        img_gray = F.rgb_to_grayscale(img, num_output_channels=1)
         # round and clip image for counting vals correctly
         img_gray = torch.clamp((img_gray * 255.0).round(), 0, 255) / 255.
         # use for-loop to get the unique values for each sample

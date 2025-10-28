@@ -28,6 +28,43 @@ class PPM(nn.Module):
         out_feat = self.fuse(torch.cat(out, 1))
         return out_feat         
 
+class AdaptiveAvgPool2d_ONNX(nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+        if isinstance(output_size, int):
+            self.output_size = (output_size, output_size)
+        else:
+            self.output_size = tuple(output_size)
+
+    def forward(self, x):
+        # Step 1: Global average pool to 1x1
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        # Step 2: Upsample to target size
+        return F.upsample(x, size=self.output_size, mode='nearest')
+
+class PPM2(nn.Module):
+    def __init__(self, in_dim, reduction_dim, bins):
+        super(PPM2, self).__init__()
+        self.features = []
+        for bin in bins: #[1,2,3,6]
+            self.features.append(nn.Sequential(
+                AdaptiveAvgPool2d_ONNX(bin),
+                nn.Conv2d(in_dim, reduction_dim, kernel_size=1, bias=False),
+                nn.PReLU()
+            ))
+        self.features = nn.ModuleList(self.features)
+        self.fuse = nn.Sequential(
+                nn.Conv2d(in_dim+reduction_dim*4, in_dim, kernel_size=3, padding=1, bias=False),
+                nn.PReLU())
+
+    def forward(self, x):
+        x_size = x.size()
+        out = [x]
+        for f in self.features:
+            out.append(F.interpolate(f(x), x_size[2:], mode='bilinear', align_corners=True))
+        out_feat = self.fuse(torch.cat(out, 1))
+        return out_feat         
+
 
 class ResidualDownSample(nn.Module):
     def __init__(self, in_channels, out_channels, bias=False):
@@ -171,7 +208,7 @@ class CurveCALayer(nn.Module):
 
 @ARCH_REGISTRY.register()
 class LEDNet(nn.Module):
-    def __init__(self, channels=[32, 64, 128, 128], connection=False):
+    def __init__(self, channels=[32, 64, 128, 128], connection=False, ppm_version= 1):
         super(LEDNet, self).__init__()
         [ch1, ch2, ch3, ch4] = channels
         self.connection = connection
@@ -206,7 +243,7 @@ class LEDNet(nn.Module):
             nn.Conv2d(ch2, ch2, 3, stride=1, padding=1), nn.ReLU(),
             nn.Conv2d(ch2, ch2* ks_2d**2, 1, stride=1))
 
-        self.kconv_deblur = KernelConv2D(ksize=ks_2d, act=True)
+        self.kconv_deblur = KernelConv2D(ksize=ks_2d, act=True) if ppm_version == 1 else KernelConv2D_V2(ksize=ks_2d, act=True)
 
         # curve
         self.curve_n = 3
@@ -214,9 +251,9 @@ class LEDNet(nn.Module):
         self.conv_2c = CurveCALayer(ch3, self.curve_n)
         self.conv_3c = CurveCALayer(ch4, self.curve_n)
 
-        self.PPM1 = PPM(ch2, ch2//4, bins=(1,2,3,6))
-        self.PPM2 = PPM(ch3, ch3//4, bins=(1,2,3,6))
-        self.PPM3 = PPM(ch4, ch4//4, bins=(1,2,3,6))
+        self.PPM1 = PPM(ch2, ch2//4, bins=(1,2,3,6)) if ppm_version == 1 else PPM2(ch2, ch2//4, bins=(1,2,3,6))
+        self.PPM2 = PPM(ch3, ch3//4, bins=(1,2,3,6)) if ppm_version == 1 else PPM2(ch3, ch3//4, bins=(1,2,3,6))
+        self.PPM3 = PPM(ch4, ch4//4, bins=(1,2,3,6)) if ppm_version == 1 else PPM2(ch4, ch4//4, bins=(1,2,3,6))
 
         self.D_block3 = BasicBlock_D_2Res(ch4, ch4)
         self.D_block2 = BasicBlock_D_2Res(ch4, ch3, mode='up')

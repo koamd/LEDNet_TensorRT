@@ -8,6 +8,71 @@ import torch.nn as nn
 import torch.nn.parallel
 from torch.nn import functional as F
 
+def onnx_unfold_alternative_width(x, size=5, step=1):
+    """
+    ONNX-compatible replacement for torch.unfold(dim=3, size=5, step=1).
+    Assumes input is a 4D tensor with shape (B, C, H, W).
+    Sliding window is applied along the width (dim=3).
+    """
+    # Input dimensions: (batch_size, channels, height, width)
+    W = x.size(3)
+
+    # Calculate the number of sliding windows along the width
+    num_windows = (W - size) // step + 1
+
+    # Collect all slices along the width (dim=3)
+    indices = torch.arange(0, num_windows * step, step).view(-1, 1) + torch.arange(size)
+    unfolded = x[:, :, :, indices, :]
+
+    return unfolded.permute(0,1,2,3,5,4)
+
+def onnx_unfold_alternative_height(x, size=5, step=1):
+    """
+    ONNX-compatible replacement for torch.unfold(dim=2, size=5, step=1).
+    Assumes input is a 4D tensor with shape (B, C, H, W).
+    Sliding window is applied along the width (dim=3).
+    """
+    # Input dimensions: (batch_size, channels, height, width)
+    H  = x.size(2)
+
+    # Calculate the number of sliding windows along the width
+    num_windows = (H- size) // step + 1
+
+    # Create sliding window indices
+    indices = torch.arange(0, num_windows * step, step).view(-1, 1) + torch.arange(size)
+    unfolded = x[:, :, indices, :]  # Shape: (B, C, num_windows, size, W)
+
+    return unfolded.permute(0,1,2,4,3)
+
+
+class KernelConv2D_V2(nn.Module):
+    def __init__(self, ksize=5, act=True):
+        super(KernelConv2D_V2, self).__init__()
+        self.ksize = ksize
+        self.act = act
+
+    def forward(self, feat_in, kernel):
+        channels = feat_in.size(1)
+        N, kernels, H, W = kernel.size()
+        pad = (self.ksize - 1) // 2
+
+        feat_in = F.pad(feat_in, (pad, pad, pad, pad), mode="replicate")
+        
+        #modified unfold layer to onnx compatible functions
+        feat_in = onnx_unfold_alternative_height(feat_in, self.ksize, 1)
+        feat_in = onnx_unfold_alternative_width(feat_in, self.ksize, 1)
+
+        feat_in = feat_in.permute(0, 2, 3, 1, 4, 5).contiguous()
+        feat_in = feat_in.reshape(N, H, W, channels, -1)
+
+        kernel = kernel.permute(0, 2, 3, 1).reshape(N, H, W, channels, -1)
+        feat_out = torch.sum(feat_in * kernel, -1)
+        feat_out = feat_out.permute(0, 3, 1, 2).contiguous()
+        
+        if self.act: 
+            feat_out = F.leaky_relu(feat_out, negative_slope=0.2, inplace=True)
+        return feat_out
+    
 class KernelConv2D(nn.Module):
     def __init__(self, ksize=5, act=True):
         super(KernelConv2D, self).__init__()

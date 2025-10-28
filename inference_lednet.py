@@ -10,8 +10,9 @@ from torchvision.transforms.functional import normalize
 from basicsr.utils import imwrite, img2tensor, tensor2img, scandir
 from basicsr.utils.download_util import load_file_from_url
 import torch.nn.functional as F
-
 from basicsr.utils.registry import ARCH_REGISTRY
+from time import perf_counter
+
 
 pretrain_model_url = {
     'lednet': 'https://github.com/sczhou/LEDNet/releases/download/v0.1.0/lednet.pth',
@@ -35,6 +36,9 @@ if __name__ == '__main__':
     parser.add_argument('--result_path', type=str, default='./results')
     parser.add_argument('--model', type=str, default='lednet', 
                                     help='options: lednet, lednet_retrain, lednetgan')
+    parser.add_argument('--ppm', type=int, default=1, 
+                                    help='options: 1, 2')
+    
 
     args = parser.parse_args()
 
@@ -45,9 +49,12 @@ if __name__ == '__main__':
         args.result_path = args.result_path[:-1]
     result_root = f'{args.result_path}/{os.path.basename(args.test_path)}'
 
+    if not os.path.exists(args.result_path):
+        os.makedirs(args.result_path)
+    
     # ------------------ set up LEDNet network -------------------
     down_factor = 8 # check_image_size
-    net = ARCH_REGISTRY.get('LEDNet')(channels=[32, 64, 128, 128], connection=False).to(device)
+    net = ARCH_REGISTRY.get('LEDNet')(channels=[32, 64, 128, 128], connection=False, ppm_version = args.ppm).to(device)
     
     # ckpt_path = 'weights/lednet.pth'
     assert args.model in ['lednet', 'lednet_retrain', 'lednetgan'], ('model name should be [lednet] or [lednetgan]')
@@ -61,7 +68,9 @@ if __name__ == '__main__':
     # scan all the jpg and png images
     img_paths = sorted(list(scandir(args.test_path, suffix=('jpg', 'png'), recursive=True, full_path=True)))
 
-    for img_path in img_paths:
+    total_time_taken_seconds = 0.0
+
+    for index, img_path in enumerate(img_paths):
         # img_name = os.path.basename(img_path)
         img_name = img_path.replace(args.test_path+'/', '')
         print(f'Processing: {img_name}')
@@ -79,13 +88,24 @@ if __name__ == '__main__':
             # check_image_size
             H, W = img_t.shape[2:]
             img_t = check_image_size(img_t, down_factor)
+            
+            start_time = perf_counter()
+            torch.cuda.synchronize()
+
             output_t = net(img_t)
+            
+            torch.cuda.synchronize()
+            end_time = perf_counter()
+            
             output_t = output_t[:,:,:H,:W]
 
             if args.model == 'lednet':
                 output = tensor2img(output_t, rgb2bgr=True, min_max=(0, 1))
             else:
                 output = tensor2img(output_t, rgb2bgr=True, min_max=(-1, 1))
+
+        if index != 0:
+            total_time_taken_seconds += (end_time - start_time)
 
         del output_t
         torch.cuda.empty_cache()
@@ -95,4 +115,10 @@ if __name__ == '__main__':
         save_restore_path = img_path.replace(args.test_path, result_root)
         imwrite(output, save_restore_path)
 
+    total_time_taken_seconds /= (len(img_paths) - 1)
+    print("[Info] Completed Inference - Average Inference Time: {0} seconds".format(total_time_taken_seconds))
     print(f'\nAll results are saved in {result_root}')
+
+
+#python inference_lednet.py --model lednet_retrain --test_path '/home/ubuntu/Data/Lowlight/LOL/test/low_blur/0052' --result_path './output/uncompressed_ppm1/' --ppm 1
+#python inference_lednet.py --model lednet_retrain --test_path '/home/ubuntu/Data/Lowlight/LOL/test/low_blur/0052' --result_path './output/uncompressed_ppm2/' --ppm 2
